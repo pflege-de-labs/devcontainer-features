@@ -14,7 +14,17 @@ while (($#)); do
   esac
 done
 [[ -n $msg ]] || { echo "usage: agent-commit -m <message> | -F <file>" >&2; exit 2; }
-git diff --cached --quiet && { echo "agent-commit: nothing staged" >&2; exit 1; }
+
+# Snapshot the index once: on a shared mount (devcontainer + host git) the index can briefly
+# vanish, and git reads a missing index as empty, i.e. "delete every file". Retry that case.
+empty=$(git hash-object -t tree /dev/null)
+for _ in 1 2 3 4 5; do
+  tree=$(git write-tree)
+  [[ $tree != "$empty" ]] && break
+  sleep 1
+done
+[[ $tree != "$empty" ]] || { echo "agent-commit: index reads as empty; refusing to delete every file" >&2; exit 1; }
+[[ $tree != $(git rev-parse "HEAD^{tree}") ]] || { echo "agent-commit: nothing staged" >&2; exit 1; }
 
 branch=$(git symbolic-ref --short HEAD)
 repo=$(git remote get-url origin)
@@ -52,7 +62,7 @@ while IFS= read -r -d '' meta && IFS= read -r -d '' path; do
   fi
   git cat-file blob "$sha" | base64 | tr -d '\n' >"$tmp/blob"
   jq -n --arg p "$path" --rawfile c "$tmp/blob" '{path: $p, contents: $c}' >>"$tmp/additions"
-done < <(git diff --cached --raw -z --no-renames --no-abbrev)
+done < <(git diff-tree -r --raw -z --no-renames --no-abbrev HEAD "$tree")
 
 jq -n --arg repo "$repo" --arg branch "$branch" --arg head "$head" --arg msg "$msg" \
   --slurpfile adds "$tmp/additions" --slurpfile dels "$tmp/deletions" '{
@@ -68,8 +78,8 @@ oid=$(jq -r '.data.createCommitOnBranch.commit.oid // empty' <<<"$resp")
 
 git fetch -q origin "+refs/heads/$branch:refs/remotes/origin/$branch"
 # Move the branch only if GitHub's commit holds exactly what was staged.
-if [[ $(git rev-parse "$oid^{tree}") != $(git write-tree) ]]; then
-  echo "agent-commit: pushed $oid, but its tree differs from the index; local branch left as is" >&2
+if [[ $(git rev-parse "$oid^{tree}") != "$tree" ]]; then
+  echo "agent-commit: pushed $oid, but its tree differs from the staged one; local branch left as is" >&2
   exit 1
 fi
 git reset -q --soft "$oid"

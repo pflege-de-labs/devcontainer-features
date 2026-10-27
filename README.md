@@ -76,7 +76,10 @@ container, deny the agent read access to `~/.ssh`, `~/.config/gh` and `~/.cache/
 
 The feature installs `curl`, `jq`, `git` and `gh` if missing (apt only), puts the scripts in
 `/usr/local/share/agent-token/bin` ahead of everything else in `PATH` (so `gh` is the wrapper) and
-writes the system git config below. Change the mount target to your `remoteUser`'s home. Each
+writes the system git config below. After creation it sets `core.checkStat minimal` in the
+workspace repo: host and container see different inode/uid data through the bind mount, so each
+side's `git status` (also an editor's on the host) would rewrite the index, and the other side then
+briefly reads it as missing, i.e. empty. Change the mount target to your `remoteUser`'s home. Each
 script change needs a `version` bump in `devcontainer-feature.json`, or the release skips it.
 
 Test: `devcontainer features test -f agent-token -i mcr.microsoft.com/devcontainers/base:bookworm`
