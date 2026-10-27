@@ -48,7 +48,7 @@ agent-commit -m "feat: something" -m "Body."   # or -F <file>
 - `AGENT_COMMIT_MODE=local` turns it into plain `git commit`, for repos that do not want API
   commits.
 
-Live test: `test/agent-commit.sh org/repo` (needs a login and write access; cleans up its branch).
+Live test: `test/agent-token/agent-commit-live.sh org/repo` (needs a login and write access; cleans up its branch).
 
 ### On the host
 
@@ -62,7 +62,27 @@ agent-token my-org/my-repo   # prints a 1h agent token
 The login token is cached in `~/.cache/agent-token/login.json` (mode 600) for 8 hours. Without a
 container, deny the agent read access to `~/.ssh`, `~/.config/gh` and `~/.cache/agent-token`.
 
-### In an image
+### In a devcontainer
+
+```jsonc
+"features": {
+  "ghcr.io/pflege-de-labs/devcontainer-features/agent-token:1": {}
+},
+// TOKEN_BROKER_URL and LOGIN_APP_CLIENT_ID, e.g. written by token-broker's broker-env.sh.
+"runArgs": ["--env-file=${localWorkspaceFolder}/.devcontainer/.env"],
+"mounts": ["source=agent-token-cache-${devcontainerId},target=/home/vscode/.cache/agent-token,type=volume"],
+"postAttachCommand": "agent-token --check 2>/dev/null || agent-token --login"
+```
+
+The feature installs `curl`, `jq`, `git` and `gh` if missing (apt only), puts the scripts in
+`/usr/local/share/agent-token/bin` ahead of everything else in `PATH` (so `gh` is the wrapper) and
+writes the system git config below. Change the mount target to your `remoteUser`'s home. Each
+script change needs a `version` bump in `devcontainer-feature.json`, or the release skips it.
+
+Test: `devcontainer features test -f agent-token -i mcr.microsoft.com/devcontainers/base:bookworm`
+(with podman, put a `docker` symlink to `podman` first in `PATH`).
+
+### In an image, without the feature
 
 - `bash`, `curl`, `jq`, `git`, `gh`; `github-mcp-server` only for the MCP server.
 - The scripts in `/usr/local/bin`, with `agent-gh` installed **as `gh`**. It must come before the
@@ -88,7 +108,7 @@ Do not run `gh auth login` or `gh auth setup-git` in the container: the agent sh
 the agent app. Commands without one target repo (`gh api orgs/...`) get no agent token and fail
 unauthenticated, by design.
 
-Until the feature is published, fetch the scripts at a pinned commit:
+Fetch the scripts at a pinned commit:
 
 ```dockerfile
 FROM docker.io/library/debian:bookworm-slim

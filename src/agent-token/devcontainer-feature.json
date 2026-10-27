@@ -1,0 +1,14 @@
+{
+  "id": "agent-token",
+  "version": "1.0.0",
+  "name": "Agent token",
+  "description": "git, gh and agent-commit act as the agent GitHub App, with short-lived tokens from token-broker",
+  "documentationURL": "https://github.com/pflege-de-labs/devcontainer-features#agent-token",
+  "installsAfter": [
+    "ghcr.io/devcontainers/features/common-utils",
+    "ghcr.io/devcontainers/features/github-cli"
+  ],
+  "containerEnv": {
+    "PATH": "/usr/local/share/agent-token/bin:${PATH}"
+  }
+}
