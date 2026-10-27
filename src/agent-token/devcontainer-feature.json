@@ -1,6 +1,6 @@
 {
   "id": "agent-token",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "name": "Agent token",
   "description": "git, gh and agent-commit act as the agent GitHub App, with short-lived tokens from token-broker",
   "documentationURL": "https://github.com/pflege-de-labs/devcontainer-features#agent-token",
@@ -10,5 +10,6 @@
   ],
   "containerEnv": {
     "PATH": "/usr/local/share/agent-token/bin:${PATH}"
-  }
+  },
+  "postCreateCommand": "git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.checkStat minimal || true"
 }
