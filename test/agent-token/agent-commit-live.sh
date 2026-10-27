@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Live test for agent-commit: needs agent-token logged in and write access to <org/repo>.
-# Usage: test/agent-commit.sh org/repo  — works on a throwaway branch and deletes it afterwards.
+# Usage: test/agent-token/agent-commit-live.sh org/repo  — works on a throwaway branch and deletes it afterwards.
 set -euo pipefail
-repo=${1:?usage: test/agent-commit.sh org/repo}
-PATH=$(cd "$(dirname "$0")/../src/agent-token/bin" && pwd):$PATH
+repo=${1:?usage: test/agent-token/agent-commit-live.sh org/repo}
+PATH=$(cd "$(dirname "$0")/../../src/agent-token/bin" && pwd):$PATH
 token=$(AGENT_TOKEN_NONINTERACTIVE=1 agent-token "$repo")
 gh_api() { curl -fsS -H "Authorization: Bearer $token" "https://api.github.com/repos/$repo/$1" "${@:2}"; }
 branch=test/agent-commit-$(date +%s)
