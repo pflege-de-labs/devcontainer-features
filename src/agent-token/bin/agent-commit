@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Usage: agent-commit -m <message> [-m <paragraph>]... | -F <file>
+# Commits the staged changes through GitHub's createCommitOnBranch, so GitHub signs the commit,
+# then moves the local branch onto it. AGENT_COMMIT_MODE=local runs plain `git commit` instead.
+set -euo pipefail
+if [[ ${AGENT_COMMIT_MODE:-api} == local ]]; then exec git commit "$@"; fi
+
+msg=
+while (($#)); do
+  case $1 in
+    -m) msg+=${msg:+$'\n\n'}${2:?-m needs a message}; shift 2 ;;
+    -F) msg=$(cat "${2:?-F needs a file}"); shift 2 ;;
+    *) echo "agent-commit: unsupported argument $1 (stage with git add, then -m or -F)" >&2; exit 2 ;;
+  esac
+done
+[[ -n $msg ]] || { echo "usage: agent-commit -m <message> | -F <file>" >&2; exit 2; }
+git diff --cached --quiet && { echo "agent-commit: nothing staged" >&2; exit 1; }
+
+branch=$(git symbolic-ref --short HEAD)
+repo=$(git remote get-url origin)
+repo=${repo%.git}
+repo=${repo#*github.com[:/]}
+head=$(git rev-parse HEAD)
+token=$(AGENT_TOKEN_NONINTERACTIVE=1 agent-token "$repo")
+api() { curl -fsS -H "Authorization: Bearer $token" -H "Content-Type: application/json" "https://api.github.com/$1" --data @-; }
+
+remote=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
+if [[ -z $remote ]]; then
+  # Fails if HEAD is a local-only commit: the API can only branch off commits GitHub has.
+  jq -n --arg ref "refs/heads/$branch" --arg sha "$head" '{ref: $ref, sha: $sha}' | api "repos/$repo/git/refs" >/dev/null ||
+    { echo "agent-commit: cannot create $branch on origin at $head; is that commit on GitHub?" >&2; exit 1; }
+elif [[ $remote != "$head" ]]; then
+  echo "agent-commit: local $branch ($head) differs from origin ($remote); pull or reset first" >&2
+  exit 1
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+: >"$tmp/additions"
+: >"$tmp/deletions"
+# Raw format: ":<old mode> <new mode> <old sha> <new sha> <status>\0<path>\0".
+while IFS= read -r -d '' meta && IFS= read -r -d '' path; do
+  read -r old_mode new_mode _ sha status <<<"${meta#:}"
+  if [[ $status == D ]]; then
+    jq -n --arg p "$path" '{path: $p}' >>"$tmp/deletions"
+    continue
+  fi
+  # The API has no file mode: new files land as 100644, existing ones keep theirs.
+  if [[ $new_mode != 100644 && $new_mode != "$old_mode" ]] || [[ $old_mode != 000000 && $old_mode != "$new_mode" ]]; then
+    echo "agent-commit: $path changes mode ($old_mode -> $new_mode), which the API cannot commit; use git commit" >&2
+    exit 1
+  fi
+  git cat-file blob "$sha" | base64 | tr -d '\n' >"$tmp/blob"
+  jq -n --arg p "$path" --rawfile c "$tmp/blob" '{path: $p, contents: $c}' >>"$tmp/additions"
+done < <(git diff --cached --raw -z --no-renames --no-abbrev)
+
+jq -n --arg repo "$repo" --arg branch "$branch" --arg head "$head" --arg msg "$msg" \
+  --slurpfile adds "$tmp/additions" --slurpfile dels "$tmp/deletions" '{
+  query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+  variables: {input: {
+    branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+    expectedHeadOid: $head,
+    message: {headline: ($msg | split("\n")[0]), body: ($msg | split("\n")[1:] | join("\n") | ltrimstr("\n"))},
+    fileChanges: {additions: $adds, deletions: $dels}}}}' >"$tmp/request"
+resp=$(api graphql <"$tmp/request")
+oid=$(jq -r '.data.createCommitOnBranch.commit.oid // empty' <<<"$resp")
+[[ -n $oid ]] || { echo "agent-commit: GitHub refused: $(jq -c '.errors // .' <<<"$resp")" >&2; exit 1; }
+
+git fetch -q origin "+refs/heads/$branch:refs/remotes/origin/$branch"
+# Move the branch only if GitHub's commit holds exactly what was staged.
+if [[ $(git rev-parse "$oid^{tree}") != $(git write-tree) ]]; then
+  echo "agent-commit: pushed $oid, but its tree differs from the index; local branch left as is" >&2
+  exit 1
+fi
+git reset -q --soft "$oid"
+# Via config: --set-upstream-to rejects refs outside remote.origin.fetch (single-branch clones).
+git config "branch.$branch.remote" origin
+git config "branch.$branch.merge" "refs/heads/$branch"
+echo "[$branch ${oid:0:7}] $(git log -1 --format=%s "$oid")"

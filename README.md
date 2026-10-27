@@ -15,6 +15,7 @@ tokens live 1h and cover one repo, while sessions run longer and touch several r
 | `agent-token-git-credential` | git credential helper for `github.com` |
 | `agent-gh` | Wrapper installed as `gh`; sets `GH_TOKEN` for the target repo |
 | `agent-github-mcp` | Starts the local `github-mcp-server` with a token for the current repo (optional) |
+| `agent-commit` | Commits the staged changes through the GitHub API, so GitHub signs them (optional) |
 
 The developer logs in once per 8h with `agent-token --login` in an interactive terminal. All other
 calls set `AGENT_TOKEN_NONINTERACTIVE=1` and fail with `run: agent-token --login` instead of
@@ -25,6 +26,29 @@ login app). The pflege-de orgs publish both as the Actions variables `AGENT_TOKE
 `AGENT_LOGIN_CLIENT_ID` (repo variables override them); token-broker's
 [`.devcontainer/broker-env.sh`](https://github.com/pflege-de/token-broker/blob/main/.devcontainer/broker-env.sh)
 reads them on the host and passes them into the container.
+
+### Signed commits
+
+`git commit` in the container makes unsigned commits: GitHub signs app commits only when it
+creates them itself. Rulesets with `required_signatures` then block them on protected branches
+(squash merges still work, GitHub signs the squash commit). `agent-commit` instead sends the
+staged changes to GraphQL `createCommitOnBranch` and moves the local branch onto the signed
+commit:
+
+```sh
+git add -A
+agent-commit -m "feat: something" -m "Body."   # or -F <file>
+```
+
+- It pushes as it commits; there is no separate `git push`. A branch missing on origin is created
+  at `HEAD`, which must already be on GitHub.
+- It refuses if the local branch has commits that origin lacks, and for new executables or mode
+  changes: the API has no file mode, so new files land as `100644`. Commit those with `git commit`.
+- No merge commits; rebase onto the base branch instead.
+- `AGENT_COMMIT_MODE=local` turns it into plain `git commit`, for repos that do not want API
+  commits.
+
+Live test: `test/agent-commit.sh org/repo` (needs a login and write access; cleans up its branch).
 
 ### On the host
 
@@ -72,9 +96,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends bash ca-certifi
  && rm -rf /var/lib/apt/lists/*
 ARG AGENT_TOKEN_REF=<commit of this repo>
 RUN base=https://raw.githubusercontent.com/pflege-de-labs/devcontainer-features/$AGENT_TOKEN_REF/src/agent-token/bin \
- && for f in agent-token agent-token-git-credential agent-github-mcp; do curl -fsSL "$base/$f" -o /usr/local/bin/$f; done \
+ && for f in agent-token agent-token-git-credential agent-github-mcp agent-commit; do curl -fsSL "$base/$f" -o /usr/local/bin/$f; done \
  && curl -fsSL "$base/agent-gh" -o /usr/local/bin/gh \
- && chmod 755 /usr/local/bin/agent-token /usr/local/bin/agent-token-git-credential /usr/local/bin/agent-github-mcp /usr/local/bin/gh
+ && chmod 755 /usr/local/bin/agent-token /usr/local/bin/agent-token-git-credential /usr/local/bin/agent-github-mcp /usr/local/bin/agent-commit /usr/local/bin/gh
 RUN git config --system credential.https://github.com.helper '' \
  && git config --system --add credential.https://github.com.helper '!agent-token-git-credential' \
  && git config --system credential.https://github.com.useHttpPath true \
