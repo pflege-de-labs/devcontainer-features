@@ -21,11 +21,12 @@ The developer logs in once per 8h with `agent-token --login` in an interactive t
 calls set `AGENT_TOKEN_NONINTERACTIVE=1` and fail with `run: agent-token --login` instead of
 waiting for a device code nobody sees.
 
-Environment: `TOKEN_BROKER_URL` (internal broker URL) and `LOGIN_APP_CLIENT_ID` (client ID of the
-login app). The pflege-de orgs publish both as the Actions variables `AGENT_TOKEN_BROKER_URL` and
-`AGENT_LOGIN_CLIENT_ID` (repo variables override them); token-broker's
+Environment: `TOKEN_BROKER_URL` (internal broker URL). The login app's client ID comes from the
+broker (`GET /login-app`, token-broker ≥ 0.4.0); `LOGIN_APP_CLIENT_ID` overrides it. The pflege-de
+orgs publish the URL as the Actions variable `AGENT_TOKEN_BROKER_URL` (repo variables override it);
+token-broker's
 [`.devcontainer/broker-env.sh`](https://github.com/pflege-de/token-broker/blob/main/.devcontainer/broker-env.sh)
-reads them on the host and passes them into the container.
+reads it on the host and passes it into the container.
 
 ### Signed commits
 
@@ -68,7 +69,7 @@ container, deny the agent read access to `~/.ssh`, `~/.config/gh` and `~/.cache/
 "features": {
   "ghcr.io/pflege-de-labs/devcontainer-features/agent-token:1": {}
 },
-// TOKEN_BROKER_URL and LOGIN_APP_CLIENT_ID, e.g. written by token-broker's broker-env.sh.
+// TOKEN_BROKER_URL, e.g. written by token-broker's broker-env.sh.
 "runArgs": ["--env-file=${localWorkspaceFolder}/.devcontainer/.env"],
 "mounts": ["source=agent-token-cache-${devcontainerId},target=/home/vscode/.cache/agent-token,type=volume"],
 "postAttachCommand": "agent-token --check 2>/dev/null || agent-token --login"
@@ -90,7 +91,7 @@ Test: `devcontainer features test -f agent-token -i mcr.microsoft.com/devcontain
 - `bash`, `curl`, `jq`, `git`, `gh`; `github-mcp-server` only for the MCP server.
 - The scripts in `/usr/local/bin`, with `agent-gh` installed **as `gh`**. It must come before the
   real `gh` in `PATH`; the wrapper finds the real one itself.
-- `TOKEN_BROKER_URL` and `LOGIN_APP_CLIENT_ID` in the environment.
+- `TOKEN_BROKER_URL` in the environment.
 - System git config:
 
   ```sh
@@ -127,8 +128,7 @@ RUN git config --system credential.https://github.com.helper '' \
  && git config --system credential.https://github.com.useHttpPath true \
  && git config --system url.https://github.com/.insteadOf git@github.com: \
  && git config --system --add url.https://github.com/.insteadOf ssh://git@github.com/
-ENV TOKEN_BROKER_URL=https://token-broker.internal \
-    LOGIN_APP_CLIENT_ID=<login app client ID>
+ENV TOKEN_BROKER_URL=https://token-broker.internal
 ```
 
 Debian's `gh` lands in `/usr/bin`, after `/usr/local/bin` in `PATH`. Add Claude Code and your
