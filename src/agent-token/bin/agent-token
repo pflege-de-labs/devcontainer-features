@@ -3,10 +3,10 @@
 #        agent-token --login   — logs in via the login app's device flow (interactive).
 #        agent-token --check   — exits 1 unless a login is cached.
 # Logs in once via the login app's device flow and caches that login token.
+# LOGIN_APP_CLIENT_ID overrides the login app the broker names at /login-app.
 # AGENT_TOKEN_NONINTERACTIVE=1 fails instead of starting a device flow nobody would see.
 set -euo pipefail
 : "${TOKEN_BROKER_URL:?set TOKEN_BROKER_URL, e.g. https://token-broker.internal}"
-: "${LOGIN_APP_CLIENT_ID:?set LOGIN_APP_CLIENT_ID to the login app client ID}"
 repo="${1:?usage: agent-token org/repo | --login | --check}"
 cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/agent-token"
 cache="$cache_dir/login.json"
@@ -22,13 +22,19 @@ login_token() {
     echo "agent-token: not logged in or login expired; run: agent-token --login" >&2
     exit 1
   fi
-  local code interval resp
-  code=$(curl -fsS -X POST -H "Accept: application/json" https://github.com/login/device/code -d "client_id=$LOGIN_APP_CLIENT_ID")
+  local client_id=${LOGIN_APP_CLIENT_ID:-} code interval resp
+  if [[ -z $client_id ]]; then
+    client_id=$(curl -fsS "$TOKEN_BROKER_URL/login-app" | jq -er .client_id) || {
+      echo "agent-token: broker serves no login app client ID; set LOGIN_APP_CLIENT_ID or upgrade the broker" >&2
+      exit 1
+    }
+  fi
+  code=$(curl -fsS -X POST -H "Accept: application/json" https://github.com/login/device/code -d "client_id=$client_id")
   echo "Open $(jq -r .verification_uri <<<"$code") and enter code $(jq -r .user_code <<<"$code")" >&2
   interval=$(jq -r .interval <<<"$code")
   while sleep "$interval"; do
     resp=$(curl -fsS -X POST -H "Accept: application/json" https://github.com/login/oauth/access_token \
-      -d "client_id=$LOGIN_APP_CLIENT_ID" \
+      -d "client_id=$client_id" \
       -d "device_code=$(jq -r .device_code <<<"$code")" \
       -d "grant_type=urn:ietf:params:oauth:grant-type:device_code")
     case $(jq -r '.error // empty' <<<"$resp") in
