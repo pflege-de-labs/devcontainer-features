@@ -1,9 +1,16 @@
 {
   "id": "agent-token",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "name": "Agent token",
   "description": "git, gh and agent-commit act as the agent GitHub App, with short-lived tokens from token-broker",
   "documentationURL": "https://github.com/pflege-de-labs/devcontainer-features#agent-token",
+  "options": {
+    "version": {
+      "type": "string",
+      "default": "",
+      "description": "token-broker release of the client scripts, e.g. 0.6.0. Empty installs the pinned release, checked against its reviewed sha256; any other is checked only against that release's checksums.txt."
+    }
+  },
   "installsAfter": [
     "ghcr.io/devcontainers/features/common-utils",
     "ghcr.io/devcontainers/features/github-cli"
