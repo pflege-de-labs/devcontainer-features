@@ -6,6 +6,8 @@ source dev-container-features-test-lib
 
 check "scripts on PATH" bash -c 'for c in agent-token agent-token-git-credential agent-github-mcp agent-commit; do command -v $c; done'
 check "gh is the wrapper" bash -c 'grep -q "gh wrapper" "$(command -v gh)"'
+check "scripts from the pinned release" bash -c 'grep -q -- --permissions "$(command -v agent-token)"'
+check "gh auth login refused" bash -c '! gh auth login 2>/dev/null'
 check "real gh behind it" bash -c '[[ $(type -ap gh | sed -n 2p) ]] && gh --version'
 check "credential helper" bash -c '[[ $(git config --system --get-all credential.https://github.com.helper | tail -1) == "!agent-token-git-credential" ]]'
 check "ssh rewritten to https" bash -c '[[ $(git config --system --get-all url.https://github.com/.insteadOf | head -1) == git@github.com: ]]'
