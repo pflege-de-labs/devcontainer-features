@@ -3,8 +3,8 @@
 set -euo pipefail
 
 # Reviewed pin: the sha256 is from the release's checksums.txt; bump both together.
-pinned_version=0.8.0
-pinned_sha256=925aefc75ad13bde318f58f3968a5454249e9c9177762b73f6980fca0c5eefe3
+pinned_version=0.9.0
+pinned_sha256=5d77b63ec43b9446430e94d97c0483f6b8be1b773222b43734a792f9c779a5aa
 version=${VERSION:-$pinned_version}
 version=${version#v}
 
